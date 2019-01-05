@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
-using Photon;
 using Photon.Pun;
 using Photon.Realtime;
+
 namespace com.j4games.rndMultiplayer
 {
     public class Launcher : MonoBehaviourPunCallbacks
@@ -14,6 +14,13 @@ namespace com.j4games.rndMultiplayer
         [Tooltip("The maximum number of players per room. When a room is full, it can't be joined by new players and so new room will be created")]
         public byte MaxPlayersPerRoom = 4;
 
+        [Tooltip("The Ui Panel to let the user enter name, connect and play")]
+        [SerializeField]
+        private GameObject controlPanel;
+        [Tooltip("The UI Label to inform the user that the connection is in progress")]
+        [SerializeField]
+        private GameObject progressLabel;
+
         #endregion
 
         #region Private Variables
@@ -22,6 +29,13 @@ namespace com.j4games.rndMultiplayer
         /// This client's version number. Users are separated from each other by gameversion (which allows you to make breaking changes).
         /// </summary>
         string _gameVersion = "1";
+
+        /// <summary>
+        /// Keep track of the current process. Since connection is asynchronous and is based on several callbacks from Photon,
+        /// we need to keep track of this to properly adjust the behavior when we receive call back by Photon.
+        /// Typically this is used for the OnConnectedToMaster() callback.
+        /// </summary>
+        bool isConnecting;
 
         #endregion
 
@@ -43,7 +57,8 @@ namespace com.j4games.rndMultiplayer
         /// </summary>
         void Start()
         {
-            Connect();
+            progressLabel.SetActive(false);
+            controlPanel.SetActive(true);
         }
 
         #endregion
@@ -52,6 +67,12 @@ namespace com.j4games.rndMultiplayer
 
         public void Connect()
         {
+            // keep track of the will to join a room, because when we come back from the game we will get a callback that we are connected, so we need to know what to do then
+            isConnecting = true;
+
+            progressLabel.SetActive(true);
+            controlPanel.SetActive(false);
+
             if (PhotonNetwork.IsConnected)
             {
                 PhotonNetwork.JoinRandomRoom();
@@ -70,13 +91,22 @@ namespace com.j4games.rndMultiplayer
         {
             Debug.Log("DemoAnimator/Launcher: OnConnectedToMaster() was called by PUN");
 
-            // #Critical: The first we try to do is to join a potential existing room. If there is, good, else, we'll be called back with OnPhotonRandomJoinFailed()
-            PhotonNetwork.JoinRandomRoom();
+            // we don't want to do anything if we are not attempting to join a room.
+            // this case where isConnecting is false is typically when you lost or quit the game, when this level is loaded, OnConnectedToMaster will be called, in that case
+            // we don't want to do anything.
+            if (isConnecting)
+            {
+                // #Critical: The first we try to do is to join a potential existing room. If there is, good, else, we'll be called back with OnJoinRandomFailed()
+                PhotonNetwork.JoinRandomRoom();
+            }
         }
 
 
         public override void OnDisconnected(DisconnectCause cause)
         {
+            progressLabel.SetActive(false);
+            controlPanel.SetActive(true);
+
             Debug.LogWarning("DemoAnimator/Launcher: OnDisconnectedFromPhoton() was called by PUN");
         }
 
@@ -91,6 +121,16 @@ namespace com.j4games.rndMultiplayer
         public override void OnJoinedRoom()
         {
             Debug.Log("DemoAnimator/Launcher: OnJoinedRoom() called by PUN. Now this client is in a room.");
+
+            // #Critical: We only load if we are the first player, else we rely on `PhotonNetwork.AutomaticallySyncScene` to sync our instance scene.
+            if (PhotonNetwork.CurrentRoom.PlayerCount == 1)
+            {
+                Debug.Log("We load the 'Room for 1' ");
+
+                // #Critical
+                // Load the Room Level.
+                PhotonNetwork.LoadLevel("Room for 1");
+            }
         }
 
         #endregion
